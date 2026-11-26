@@ -1,0 +1,78 @@
+{
+  "name": "PeoplePulse — New Hire Onboarding",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-hire",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "New Hire Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "new-hire"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a department-specific onboarding checklist and a welcome email.\n// Input (webhook JSON body): full_name, email, department, country, start_date, manager_email\nconst b = $json.body || $json;\nconst name = b.full_name || 'New Joiner';\nconst dept = b.department || 'General';\nconst country = b.country || '';\nconst start = b.start_date || '';\n\n// Tasks every new hire gets.\nconst base = [\n  'Create corporate email + SSO account',\n  'Provision laptop and access badge',\n  'Enroll in payroll and benefits',\n  'Schedule Day-1 orientation',\n  'Assign onboarding buddy'\n];\n\n// Extra tasks by department.\nconst byDept = {\n  'Engineering': ['Grant Git/CI access', 'Add to on-call rotation (shadow)'],\n  'Sales': ['Provision CRM seat', 'Assign territory and quota'],\n  'Customer Support': ['Provision helpdesk seat', 'Enroll in product training'],\n  'Finance': ['Grant ERP access (read-only)', 'Complete compliance training']\n};\n\nconst tasks = base.concat(byDept[dept] || []);\n\nconst html = `<p>Hi ${name},</p>\n<p>Welcome to the team! We are excited for your start date on <b>${start}</b> in <b>${dept}</b>${country ? ' (' + country + ')' : ''}.</p>\n<p>Here is your onboarding checklist:</p>\n<ul>${tasks.map(t => '<li>' + t + '</li>').join('')}</ul>\n<p>Your manager will reach out shortly. See you soon!</p>\n<p>— People Operations</p>`;\n\nreturn [{ json: { name, email: b.email, department: dept, start_date: start, tasks, task_count: tasks.length, html } }];"
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Build Onboarding Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "people-ops@peoplepulse.local",
+        "toEmail": "={{ $json.email }}",
+        "subject": "=Welcome to PeoplePulse, {{ $json.name }}!",
+        "emailFormat": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "MailHog SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"onboarding_started\", \"new_hire\": $json.name, \"tasks_created\": $json.task_count, \"tasks\": $json.tasks } }}",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "New Hire Webhook": {
+      "main": [[{ "node": "Build Onboarding Tasks", "type": "main", "index": 0 }]]
+    },
+    "Build Onboarding Tasks": {
+      "main": [[{ "node": "Send Welcome Email", "type": "main", "index": 0 }]]
+    },
+    "Send Welcome Email": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "1",
+  "meta": { "note": "SYNTHETIC demo workflow. SMTP points at local MailHog (no real mail leaves the machine)." },
+  "tags": [{ "name": "peoplepulse" }, { "name": "onboarding" }]
+}
