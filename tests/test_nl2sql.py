@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from peoplepulse.api.nl2sql import answer
@@ -10,7 +12,8 @@ from peoplepulse.api.nl2sql import answer
 def test_flagship_question_answers(warehouse):
     r = answer("What was attrition in UAE engineering in 2025?")
     assert not r.refused
-    assert r.rows and isinstance(r.rows[0][0], float)
+    # Numeric result; type is float on SQLite, Decimal on Postgres.
+    assert r.rows and isinstance(r.rows[0][0], (int, float, Decimal))
     assert "v_attrition_by_segment" in r.sql
 
 

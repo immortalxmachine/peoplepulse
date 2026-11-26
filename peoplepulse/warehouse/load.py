@@ -18,7 +18,7 @@ import datetime as dt
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from peoplepulse.config import DATA_OUT, database_url
 from peoplepulse.data.generate import WINDOW_END, WINDOW_START
@@ -106,7 +106,14 @@ def load(raw_dir: Path | None = None) -> dict[str, int]:
     engine = create_engine(database_url())
 
     # 1) Fresh schema every load (idempotent rebuild).
+    #    MIS views depend on the fact/dim tables. Postgres refuses to drop a
+    #    table while a view depends on it (SQLite silently allows it), so drop
+    #    any existing views FIRST, then the tables.
+    from peoplepulse.mis.build_views import view_names  # local import, no cycle
+
     with engine.begin() as conn:
+        for view in view_names():
+            conn.execute(text(f"DROP VIEW IF EXISTS {view}"))
         schema.metadata.drop_all(conn)
         schema.metadata.create_all(conn)
 

@@ -16,6 +16,7 @@ Run:  python -m eval.run_eval
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -27,10 +28,12 @@ HERE = Path(__file__).parent
 
 
 def _round_cell(v: object) -> object:
+    # Postgres returns NUMERIC as Decimal; SQLite returns float. Normalise both
+    # so results compare equal regardless of backend.
     if isinstance(v, bool):
         return v
-    if isinstance(v, float):
-        return round(v, 2)
+    if isinstance(v, (float, Decimal)):
+        return round(float(v), 2)
     if isinstance(v, int):
         return v
     return str(v)
