@@ -20,6 +20,7 @@ Run:  python -m peoplepulse.data.generate
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -63,6 +64,19 @@ DEPARTMENTS = [
     "Operations",
 ]
 DEPT_WEIGHTS = [0.30, 0.09, 0.18, 0.08, 0.14, 0.07, 0.06, 0.08]
+
+# Additive effect of each department on the attrition log-odds (synthetic but
+# in the spirit of real patterns: front-line Sales/Support churn more).
+DEPT_EXIT_EFFECT = {
+    "Engineering": -0.30,
+    "Product": -0.15,
+    "Sales": 0.55,
+    "Marketing": 0.20,
+    "Customer Support": 0.60,
+    "Finance": -0.20,
+    "Human Resources": 0.00,
+    "Operations": 0.10,
+}
 
 GRADES = ["G1", "G2", "G3", "G4", "G5", "G6"]  # G1 junior .. G6 senior/leadership
 # Most people sit in the middle grades.
@@ -162,24 +176,51 @@ def generate_employees(rng: np.random.Generator) -> pd.DataFrame:
         bands.append(code)
         ctc.append(int(rng.integers(lo, hi + 1)))
 
-    # Exits: ~22% of employees leave. Exit date is after hire date and, for
-    # realism, weighted toward the analysis window.
+    # --- Attrition driven by a latent risk score (realistic, not random) -----
+    # Each employee gets a risk probability from observable drivers, so the
+    # attrition model has genuine signal to learn. The SAME risk also lowers
+    # performance ratings (see generate_performance), reproducing the real-world
+    # correlation "low performers leave more".
+    # `risk` here is an employee's *annual* probability of leaving.
+    risk = np.empty(n)
+    for i in range(n):
+        _code, lo, hi = BAND_BY_GRADE[grades[i]]
+        comp_ratio = ctc[i] / ((lo + hi) / 2)  # <1 = paid below band midpoint
+        grade_ord = GRADES.index(grades[i]) + 1  # 1 (junior) .. 6 (senior)
+        lp = (
+            -1.90  # intercept -> average annual attrition ~13%
+            + DEPT_EXIT_EFFECT[departments[i]]
+            + 0.22 * (3 - grade_ord)  # juniors churn more
+            + 2.20 * (1.0 - comp_ratio)  # underpaid churn more (strong driver)
+            + rng.normal(0, 0.30)  # unexplained variation
+        )
+        risk[i] = 1.0 / (1.0 + np.exp(-lp))  # sigmoid -> annual probability
+
+    # Discrete-time hazard: each month an active employee leaves with the
+    # monthly hazard derived from their annual risk. This makes *near-term*
+    # exit depend on current risk, so the attrition model has real signal
+    # (a single random exit date would wash the signal out via timing noise).
+    window_months = _month_starts(WINDOW_START, WINDOW_END)
     exit_date: list[date | None] = [None] * n
     exit_type: list[str | None] = [None] * n
     exit_reason: list[str | None] = [None] * n
     for i in range(n):
-        if rng.random() < 0.22:
-            earliest = max(hire_dates[i] + timedelta(days=90), WINDOW_START)
-            if earliest >= WINDOW_END:
-                continue  # no room to exit inside the window; stays active
-            ed = _random_date(rng, earliest, WINDOW_END)
-            exit_date[i] = ed
-            if rng.random() < 0.70:
-                exit_type[i] = "Voluntary"
-                exit_reason[i] = rng.choice(VOLUNTARY_REASONS)
-            else:
-                exit_type[i] = "Involuntary"
-                exit_reason[i] = rng.choice(INVOLUNTARY_REASONS)
+        monthly_hazard = 1.0 - (1.0 - risk[i]) ** (1.0 / 12.0)
+        earliest = hire_dates[i] + timedelta(days=90)  # min 3 months tenure
+        for mstart in window_months:
+            if mstart < earliest:
+                continue
+            if rng.random() < monthly_hazard:
+                last = calendar.monthrange(mstart.year, mstart.month)[1]
+                exit_date[i] = date(mstart.year, mstart.month, int(rng.integers(1, last + 1)))
+                # Higher risk skews slightly toward involuntary exits.
+                if rng.random() < 0.70 - 0.25 * risk[i]:
+                    exit_type[i] = "Voluntary"
+                    exit_reason[i] = rng.choice(VOLUNTARY_REASONS)
+                else:
+                    exit_type[i] = "Involuntary"
+                    exit_reason[i] = rng.choice(INVOLUNTARY_REASONS)
+                break  # first exit wins
 
     names = [
         f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}" for _ in range(n)
@@ -199,6 +240,9 @@ def generate_employees(rng: np.random.Generator) -> pd.DataFrame:
             "exit_date": [d.isoformat() if d else "" for d in exit_date],
             "exit_type": [t or "" for t in exit_type],
             "exit_reason": [r or "" for r in exit_reason],
+            # Hidden latent risk: used only to generate correlated ratings, then
+            # dropped before the CSV is written (never exposed as a feature).
+            "_risk": risk,
         }
     )
 
@@ -298,9 +342,12 @@ def generate_performance(rng: np.random.Generator, employees: pd.DataFrame) -> p
             except ValueError:
                 exit_y = None
         last_y = exit_y or WINDOW_END.year
+        # Rating mean falls as latent risk rises: ~3.9 (low risk) -> ~2.3 (high).
+        risk = e.get("_risk")
+        risk = 0.22 if risk is None or pd.isna(risk) else float(risk)
+        rating_mean = 4.4 - 3.0 * risk  # sharp: low risk ~4.1, high risk ~2.6
         for yr in range(max(hire_y, WINDOW_START.year), min(last_y, WINDOW_END.year) + 1):
-            # Ratings centred on 3, leavers skew slightly lower.
-            base = rng.normal(3.1 if e["exit_date"] else 3.3, 0.9)
+            base = rng.normal(rating_mean, 0.5)
             rating = int(min(5, max(1, round(base))))
             rows.append({"employee_id": eid, "review_year": yr, "rating": rating})
     return pd.DataFrame(rows)
@@ -355,6 +402,8 @@ def main(out_dir: Path | None = None) -> dict[str, int]:
     performance = generate_performance(rng, employees)
     funnel = generate_hiring_funnel(rng)
 
+    # Drop the hidden latent-risk helper column; it is never part of the export.
+    employees = employees.drop(columns=["_risk"], errors="ignore")
     employees.to_csv(out / "raw_employees.csv", index=False)
     performance.to_csv(out / "raw_performance.csv", index=False)
     funnel.to_csv(out / "raw_hiring_funnel.csv", index=False)
