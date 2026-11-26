@@ -73,14 +73,43 @@ FROM m
 JOIN dim_date d ON d.date_key = m.date_key
 WINDOW w AS (ORDER BY m.date_key ROWS BETWEEN 11 PRECEDING AND CURRENT ROW);
 
+-- 3b. Attrition by segment (country x department), monthly.
+--     Lets the assistant answer e.g. "attrition in UAE engineering in 2025".
+CREATE VIEW v_attrition_by_segment AS
+WITH hc AS (
+    SELECT date_key, department_key, country_key, SUM(headcount) AS end_headcount
+    FROM fact_headcount_monthly
+    GROUP BY date_key, department_key, country_key
+),
+ex AS (
+    SELECT date_key, department_key, country_key, COUNT(*) AS exits
+    FROM fact_exits
+    GROUP BY date_key, department_key, country_key
+)
+SELECT d.year_month,
+       d.year,
+       dep.department_name,
+       co.country_name,
+       COALESCE(ex.exits, 0) AS exits,
+       hc.end_headcount,
+       100.0 * COALESCE(ex.exits, 0) / NULLIF(hc.end_headcount, 0) AS attrition_pct
+FROM hc
+JOIN dim_date d         ON d.date_key = hc.date_key
+JOIN dim_department dep ON dep.department_key = hc.department_key
+JOIN dim_country co     ON co.country_key = hc.country_key
+LEFT JOIN ex ON ex.date_key = hc.date_key
+            AND ex.department_key = hc.department_key
+            AND ex.country_key = hc.country_key;
+
 -- 4. Voluntary vs involuntary exits per month.
 CREATE VIEW v_exits_by_type AS
 SELECT d.year_month,
+       d.year,
        fe.exit_type,
        COUNT(*) AS exits
 FROM fact_exits fe
 JOIN dim_date d ON d.date_key = fe.date_key
-GROUP BY d.year_month, fe.exit_type;
+GROUP BY d.year_month, d.year, fe.exit_type;
 
 -- 5. Exit reasons as a share of all exits.
 CREATE VIEW v_exit_reasons AS
@@ -121,6 +150,7 @@ GROUP BY tenure_bucket, bucket_order;
 -- 7. Time-to-hire (hire-weighted average) per month / department / country.
 CREATE VIEW v_time_to_hire AS
 SELECT d.year_month,
+       d.year,
        dep.department_name,
        co.country_name,
        SUM(ff.hires) AS hires,
@@ -130,11 +160,12 @@ FROM fact_hiring_funnel ff
 JOIN dim_date d         ON d.date_key = ff.date_key
 JOIN dim_department dep ON dep.department_key = ff.department_key
 JOIN dim_country co     ON co.country_key = ff.country_key
-GROUP BY d.year_month, dep.department_name, co.country_name;
+GROUP BY d.year_month, d.year, dep.department_name, co.country_name;
 
 -- 8. Offer-acceptance rate per month / department / country.
 CREATE VIEW v_offer_acceptance AS
 SELECT d.year_month,
+       d.year,
        dep.department_name,
        co.country_name,
        SUM(ff.offers) AS offers,
@@ -144,7 +175,7 @@ FROM fact_hiring_funnel ff
 JOIN dim_date d         ON d.date_key = ff.date_key
 JOIN dim_department dep ON dep.department_key = ff.department_key
 JOIN dim_country co     ON co.country_key = ff.country_key
-GROUP BY d.year_month, dep.department_name, co.country_name;
+GROUP BY d.year_month, d.year, dep.department_name, co.country_name;
 
 -- 9. Gender diversity by grade (latest monthly snapshot).
 CREATE VIEW v_gender_diversity_by_grade AS
