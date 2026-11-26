@@ -28,7 +28,9 @@ def test_query_happy_path(warehouse):
     body = r.json()
     assert r.status_code == 200
     assert body["refused"] is False
-    assert body["rows"][0][0] > 0
+    # Postgres returns NUMERIC as Decimal/str over JSON; SQLite as float. Coerce
+    # so the happy-path assertion is backend-agnostic.
+    assert float(body["rows"][0][0]) > 0
 
 
 def test_query_refusal(warehouse):
