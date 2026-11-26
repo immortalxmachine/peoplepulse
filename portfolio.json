@@ -1,13 +1,17 @@
 {
   "title": "PeoplePulse",
-  "tagline": "People-analytics MIS + guard-railed GenAI HR assistant",
+  "tagline": "People-analytics MIS + guard-railed GenAI HR assistant (real IBM HR data)",
   "category": "GenAI",
   "highlights": [
-    "People-analytics MIS on a PostgreSQL/SQLite star schema with 10 SQL models.",
-    "Guard-railed GenAI natural-language-to-SQL HR assistant (sqlglot validation + allow-listing).",
-    "Out-of-time attrition-risk model (logistic regression + gradient boosting), with Streamlit + Power BI (DAX) dashboards and an n8n onboarding automation."
+    "People-analytics MIS on a PostgreSQL/SQLite star schema with 11 SQL views, built from the real IBM HR Attrition dataset (Kaggle, DbCL-1.0; 1,470 employees).",
+    "Guard-railed GenAI natural-language-to-SQL HR assistant (sqlglot validation + view allow-listing + PII refusals): 100% on 15 questions and 10 adversarial prompts.",
+    "Attrition-risk model (logistic regression + gradient boosting) at ROC-AUC 0.82 on a stratified hold-out, with Streamlit + Power BI (DAX) dashboards and an n8n onboarding automation."
   ],
-  "metrics": [],
+  "metrics": [
+    { "label": "Employees (real)", "value": "1,470" },
+    { "label": "Attrition ROC-AUC", "value": "0.82" },
+    { "label": "Guardrail block-rate", "value": "100%" }
+  ],
   "demo": null,
   "featured": true,
   "order": 6

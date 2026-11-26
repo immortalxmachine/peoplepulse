@@ -1,1 +1,1 @@
-"""Synthetic HRIS data generation (SYNTHETIC — no real employee data)."""
+"""Real HR data source — reads the public IBM HR Attrition CSV (see source.py)."""

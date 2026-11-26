@@ -8,7 +8,7 @@ from peoplepulse.model.train import train
 
 def test_nl2sql_eval_accuracy(warehouse):
     acc = run_accuracy()
-    # The rule-based mock is designed to answer all 25; allow a small margin.
+    # The rule-based mock is designed to answer all 15; allow a small margin.
     assert acc["accuracy"] >= 0.9
 
 

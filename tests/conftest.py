@@ -1,9 +1,10 @@
 """Shared pytest fixtures.
 
-The `warehouse` fixture builds a full SQLite warehouse once per test session:
-generate (deterministic, seed 42) -> load star schema -> build MIS views. It
-points DATABASE_URL at a temp DB so tests never touch a real database, while the
-raw CSVs are written to the default data_out/raw (what the model reads).
+The `warehouse` fixture builds a full SQLite warehouse once per test session from
+the REAL IBM HR Attrition CSV (data/raw/): load star schema -> build MIS views.
+It points DATABASE_URL at a temp DB so tests never touch a real database. The raw
+CSV is read locally (committed with the repo), so the suite is offline and needs
+no Kaggle credentials.
 """
 
 from __future__ import annotations
@@ -23,11 +24,9 @@ def warehouse(tmp_path_factory):
         os.environ["DATABASE_URL"] = f"sqlite:///{db.as_posix()}"
         os.environ.pop("DATABASE_URL_RO", None)  # RO falls back to the same URL
 
-    from peoplepulse.data.generate import main as generate
     from peoplepulse.mis.build_views import build as build_views
     from peoplepulse.warehouse.load import load
 
-    generate()  # writes data_out/raw (default location the model reads)
-    load()  # loads into the target DB (SQLite locally, Postgres in CI)
+    load()  # ingest real CSV -> load star schema into the target DB
     build_views()
     return {"url": os.environ["DATABASE_URL"]}

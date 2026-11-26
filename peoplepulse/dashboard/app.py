@@ -3,6 +3,8 @@
 Reads only the MIS v_* views (never base tables), so the dashboard shows exactly
 the same governed metrics as the GenAI assistant and Power BI.
 
+Data: REAL IBM HR Analytics Employee Attrition (cross-sectional, 1,470 staff).
+
 Run:  streamlit run peoplepulse/dashboard/app.py --server.port 8501
 """
 
@@ -30,84 +32,100 @@ def q(sql: str) -> pd.DataFrame:
 
 st.title("📊 PeoplePulse — People Analytics MIS")
 st.caption(
-    "⚠️ All data is **SYNTHETIC** (randomly generated). No real employee data. "
-    "Metrics come from governed SQL views in the warehouse."
+    "Data: **real** IBM HR Analytics Employee Attrition dataset "
+    "(Kaggle · DbCL-1.0 · 1,470 employees of a fictional company — a public "
+    "teaching dataset, no real individual's data). Metrics come from governed "
+    "SQL views in the warehouse."
 )
 
 # --- KPI row -----------------------------------------------------------------
-latest_hc = q("SELECT total_headcount FROM v_headcount_trend ORDER BY date_key DESC LIMIT 1")
-latest_attr = q(
-    "SELECT rolling_12m_attrition_pct FROM v_attrition_monthly ORDER BY date_key DESC LIMIT 1"
+overall = q("SELECT total_employees, leavers, attrition_pct FROM v_attrition_overall")
+income = q(
+    "SELECT SUM(avg_monthly_income * employees) / NULLIF(SUM(employees), 0) AS v "
+    "FROM v_income_by_department"
 )
-tth = q(
-    "SELECT SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) AS v "
-    "FROM v_time_to_hire"
-)
-oa = q("SELECT 100.0 * SUM(accepts) / NULLIF(SUM(offers), 0) AS v FROM v_offer_acceptance")
-vol = q("SELECT SUM(exits) AS v FROM v_exits_by_type WHERE exit_type = 'Voluntary'")
+ot = q("SELECT attrition_pct AS v FROM v_attrition_by_overtime WHERE overtime = 'Yes'")
 
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Current headcount", f"{int(latest_hc['total_headcount'][0]):,}")
-c2.metric("Attrition (rolling 12m)", f"{latest_attr['rolling_12m_attrition_pct'][0]:.1f}%")
-c3.metric("Avg time-to-hire", f"{tth['v'][0]:.0f} days")
-c4.metric("Offer acceptance", f"{oa['v'][0]:.0f}%")
-c5.metric("Voluntary exits (all-time)", f"{int(vol['v'][0]):,}")
+c1.metric("Employees", f"{int(overall['total_employees'][0]):,}")
+c2.metric("Attrition (overall)", f"{overall['attrition_pct'][0]:.1f}%")
+c3.metric("Leavers", f"{int(overall['leavers'][0]):,}")
+c4.metric("Avg monthly income", f"${income['v'][0]:,.0f}")
+c5.metric("Attrition · overtime", f"{ot['v'][0]:.1f}%")
 
 st.divider()
 
-# --- Trends ------------------------------------------------------------------
+# --- Attrition drivers -------------------------------------------------------
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Headcount trend")
-    hc = q("SELECT year_month, total_headcount FROM v_headcount_trend ORDER BY date_key")
-    st.line_chart(hc, x="year_month", y="total_headcount", height=280)
+    st.subheader("Attrition by department (%)")
+    d = q(
+        "SELECT department_name, attrition_pct FROM v_attrition_by_department "
+        "ORDER BY attrition_pct DESC"
+    )
+    st.bar_chart(d, x="department_name", y="attrition_pct", height=280)
 
 with right:
-    st.subheader("Attrition rate (%)")
-    at = q(
-        "SELECT year_month, monthly_attrition_pct, rolling_12m_attrition_pct "
-        "FROM v_attrition_monthly ORDER BY date_key"
+    st.subheader("Attrition by job role (%)")
+    r = q(
+        "SELECT job_role, attrition_pct FROM v_attrition_by_job_role "
+        "ORDER BY attrition_pct DESC"
     )
-    st.line_chart(
-        at, x="year_month", y=["monthly_attrition_pct", "rolling_12m_attrition_pct"], height=280
-    )
+    st.bar_chart(r, x="job_role", y="attrition_pct", height=280)
 
 left2, right2 = st.columns(2)
 
 with left2:
-    st.subheader("Exits: voluntary vs involuntary")
-    et = q("SELECT exit_type, SUM(exits) AS exits FROM v_exits_by_type GROUP BY exit_type")
-    st.bar_chart(et, x="exit_type", y="exits", height=280)
+    st.subheader("Attrition by overtime (%)")
+    o = q("SELECT overtime, attrition_pct FROM v_attrition_by_overtime ORDER BY overtime")
+    st.bar_chart(o, x="overtime", y="attrition_pct", height=280)
 
 with right2:
-    st.subheader("Tenure at exit")
-    tb = q("SELECT tenure_bucket, exits FROM v_tenure_buckets ORDER BY bucket_order")
-    st.bar_chart(tb, x="tenure_bucket", y="exits", height=280)
+    st.subheader("Attrition by job level (%)")
+    jl = q("SELECT job_level, attrition_pct FROM v_attrition_by_job_level ORDER BY job_level")
+    st.bar_chart(jl, x="job_level", y="attrition_pct", height=280)
 
 left3, right3 = st.columns(2)
 
 with left3:
-    st.subheader("Gender diversity by grade (% female)")
-    gd = q("SELECT grade, female_pct FROM v_gender_diversity_by_grade ORDER BY grade")
-    st.bar_chart(gd, x="grade", y="female_pct", height=280)
+    st.subheader("Attrition by tenure at company (%)")
+    tb = q(
+        "SELECT tenure_bucket, attrition_pct FROM v_attrition_by_tenure_bucket "
+        "ORDER BY bucket_order"
+    )
+    st.bar_chart(tb, x="tenure_bucket", y="attrition_pct", height=280)
 
 with right3:
-    st.subheader("Avg time-to-hire by department")
-    tth_dept = q(
-        "SELECT department_name, "
-        "SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) AS days "
-        "FROM v_time_to_hire GROUP BY department_name ORDER BY days DESC"
+    st.subheader("Attrition by monthly-income band (%)")
+    ib = q(
+        "SELECT income_band, attrition_pct FROM v_attrition_by_income_band "
+        "ORDER BY band_order"
     )
-    st.bar_chart(tth_dept, x="department_name", y="days", height=280)
+    st.bar_chart(ib, x="income_band", y="attrition_pct", height=280)
 
 st.divider()
-st.subheader("Attrition by country & department (latest full year)")
-seg = q(
-    "SELECT country_name, department_name, "
-    "100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) AS attrition_pct "
-    "FROM v_attrition_by_segment WHERE year = (SELECT MAX(year) FROM v_attrition_by_segment) "
-    "GROUP BY country_name, department_name"
-)
-pivot = seg.pivot(index="department_name", columns="country_name", values="attrition_pct")
-st.dataframe(pivot.style.format("{:.1f}%").background_gradient(cmap="Reds"), height=330)
+
+left4, right4 = st.columns(2)
+
+with left4:
+    st.subheader("Avg satisfaction — stayers vs leavers")
+    sat = q(
+        "SELECT CASE WHEN attrition = 1 THEN 'Left' ELSE 'Stayed' END AS status, "
+        "avg_job_satisfaction, avg_work_life_balance, avg_job_involvement "
+        "FROM v_satisfaction_by_attrition ORDER BY attrition"
+    )
+    st.bar_chart(
+        sat,
+        x="status",
+        y=["avg_job_satisfaction", "avg_work_life_balance", "avg_job_involvement"],
+        height=280,
+    )
+
+with right4:
+    st.subheader("Gender diversity by department (% female)")
+    gd = q(
+        "SELECT department_name, female_pct FROM v_gender_diversity "
+        "ORDER BY female_pct DESC"
+    )
+    st.bar_chart(gd, x="department_name", y="female_pct", height=280)

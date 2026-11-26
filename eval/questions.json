@@ -1,102 +1,62 @@
 [
   {
-    "question": "What was the overall attrition rate in 2024?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment WHERE year = 2024"
+    "question": "What is the overall attrition rate?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_overall"
   },
   {
-    "question": "What was attrition in UAE engineering in 2025?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment WHERE country_name = 'United Arab Emirates' AND department_name = 'Engineering' AND year = 2025"
+    "question": "What is the attrition rate in Sales?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_department WHERE department_name = 'Sales'"
   },
   {
-    "question": "What was the attrition rate in India in 2025?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment WHERE country_name = 'India' AND year = 2025"
+    "question": "What is attrition in Research & Development?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_department WHERE department_name = 'Research & Development'"
   },
   {
-    "question": "What was attrition in the Sales department in 2024?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment WHERE department_name = 'Sales' AND year = 2024"
+    "question": "What is the attrition rate in Human Resources?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_department WHERE department_name = 'Human Resources'"
   },
   {
-    "question": "What is the overall attrition rate across all years?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment"
+    "question": "What is the attrition rate for employees working overtime?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_overtime WHERE overtime = 'Yes'"
   },
   {
-    "question": "What was turnover in Germany in 2023?",
-    "reference_sql": "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) FROM v_attrition_by_segment WHERE country_name = 'Germany' AND year = 2023"
+    "question": "What is the attrition rate for employees who do not work overtime?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_overtime WHERE overtime = 'No'"
   },
   {
-    "question": "How many employees do we have in Germany?",
-    "reference_sql": "SELECT SUM(headcount) FROM v_headcount_monthly WHERE year_month = (SELECT MAX(year_month) FROM v_headcount_monthly) AND country_name = 'Germany'"
+    "question": "What is the attrition rate at job level 1?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_job_level WHERE job_level = 1"
   },
   {
-    "question": "What is the total headcount?",
-    "reference_sql": "SELECT SUM(headcount) FROM v_headcount_monthly WHERE year_month = (SELECT MAX(year_month) FROM v_headcount_monthly)"
+    "question": "What is attrition at job level 2?",
+    "reference_sql": "SELECT attrition_pct FROM v_attrition_by_job_level WHERE job_level = 2"
   },
   {
-    "question": "How many employees are in Engineering?",
-    "reference_sql": "SELECT SUM(headcount) FROM v_headcount_monthly WHERE year_month = (SELECT MAX(year_month) FROM v_headcount_monthly) AND department_name = 'Engineering'"
+    "question": "How many employees are there?",
+    "reference_sql": "SELECT total_employees FROM v_attrition_overall"
   },
   {
-    "question": "What is the headcount in India?",
-    "reference_sql": "SELECT SUM(headcount) FROM v_headcount_monthly WHERE year_month = (SELECT MAX(year_month) FROM v_headcount_monthly) AND country_name = 'India'"
+    "question": "How many employees left the company?",
+    "reference_sql": "SELECT leavers FROM v_attrition_overall"
   },
   {
-    "question": "What is the overall offer acceptance rate?",
-    "reference_sql": "SELECT 100.0 * SUM(accepts) / NULLIF(SUM(offers), 0) FROM v_offer_acceptance"
+    "question": "What is the average monthly income in Sales?",
+    "reference_sql": "SELECT avg_monthly_income FROM v_income_by_department WHERE department_name = 'Sales'"
   },
   {
-    "question": "What was the offer acceptance rate in 2025?",
-    "reference_sql": "SELECT 100.0 * SUM(accepts) / NULLIF(SUM(offers), 0) FROM v_offer_acceptance WHERE year = 2025"
+    "question": "What is the average monthly income overall?",
+    "reference_sql": "SELECT SUM(avg_monthly_income * employees) / NULLIF(SUM(employees), 0) AS avg_monthly_income FROM v_income_by_department"
   },
   {
-    "question": "What is the offer acceptance rate in Sales?",
-    "reference_sql": "SELECT 100.0 * SUM(accepts) / NULLIF(SUM(offers), 0) FROM v_offer_acceptance WHERE department_name = 'Sales'"
+    "question": "What percentage of employees are female?",
+    "reference_sql": "SELECT 100.0 * SUM(female_headcount) / NULLIF(SUM(total_headcount), 0) AS female_pct FROM v_gender_diversity"
   },
   {
-    "question": "What is the average time to hire overall?",
-    "reference_sql": "SELECT SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) FROM v_time_to_hire"
+    "question": "What is the female percentage in Research & Development?",
+    "reference_sql": "SELECT female_pct FROM v_gender_diversity WHERE department_name = 'Research & Development'"
   },
   {
-    "question": "What was the time to hire in Germany in 2024?",
-    "reference_sql": "SELECT SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) FROM v_time_to_hire WHERE country_name = 'Germany' AND year = 2024"
-  },
-  {
-    "question": "What is the average time to hire in Engineering?",
-    "reference_sql": "SELECT SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) FROM v_time_to_hire WHERE department_name = 'Engineering'"
-  },
-  {
-    "question": "What is the overall female percentage?",
-    "reference_sql": "SELECT 100.0 * SUM(female_headcount) / NULLIF(SUM(total_headcount), 0) FROM v_gender_diversity_by_grade"
-  },
-  {
-    "question": "What is the female percentage at grade G5?",
-    "reference_sql": "SELECT female_pct FROM v_gender_diversity_by_grade WHERE grade = 'G5'"
-  },
-  {
-    "question": "What is the gender diversity at grade G1?",
-    "reference_sql": "SELECT female_pct FROM v_gender_diversity_by_grade WHERE grade = 'G1'"
-  },
-  {
-    "question": "How many voluntary exits were there in 2025?",
-    "reference_sql": "SELECT SUM(exits) FROM v_exits_by_type WHERE exit_type = 'Voluntary' AND year = 2025"
-  },
-  {
-    "question": "How many involuntary exits in 2024?",
-    "reference_sql": "SELECT SUM(exits) FROM v_exits_by_type WHERE exit_type = 'Involuntary' AND year = 2024"
-  },
-  {
-    "question": "How many voluntary exits in total?",
-    "reference_sql": "SELECT SUM(exits) FROM v_exits_by_type WHERE exit_type = 'Voluntary'"
-  },
-  {
-    "question": "What is the most common tenure bucket at exit?",
-    "reference_sql": "SELECT tenure_bucket FROM v_tenure_buckets ORDER BY exits DESC LIMIT 1"
-  },
-  {
-    "question": "What is the top exit reason?",
-    "reference_sql": "SELECT exit_reason FROM v_exit_reasons ORDER BY exits DESC LIMIT 1"
-  },
-  {
-    "question": "What is the most common reason employees leave?",
-    "reference_sql": "SELECT exit_reason FROM v_exit_reasons ORDER BY exits DESC LIMIT 1"
+    "question": "Do leavers have lower job satisfaction?",
+    "reference_sql": "SELECT attrition, avg_job_satisfaction, avg_work_life_balance FROM v_satisfaction_by_attrition ORDER BY attrition"
   }
 ]

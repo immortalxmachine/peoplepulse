@@ -19,14 +19,17 @@ from peoplepulse.config import LLM_PROVIDER
 
 app = FastAPI(
     title="PeoplePulse HR Query Assistant",
-    description="Natural-language HR analytics over SYNTHETIC data, with SQL guardrails.",
+    description=(
+        "Natural-language HR analytics over the real IBM HR Attrition dataset, "
+        "with SQL guardrails."
+    ),
     version="0.1.0",
 )
 
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=500, examples=[
-        "What was attrition in UAE engineering in 2025?"
+        "What is the attrition rate for employees working overtime?"
     ])
     provider: str | None = Field(
         None, description="Override LLM provider: mock | gemini | ollama"

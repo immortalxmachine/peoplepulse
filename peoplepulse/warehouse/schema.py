@@ -1,19 +1,23 @@
-"""Star-schema definition (SQLAlchemy Core).
+"""Star-schema definition (SQLAlchemy Core) for the REAL IBM HR dataset.
 
 We define the schema once with SQLAlchemy Core so it emits *dialect-correct* DDL
 on both SQLite (local dev) and PostgreSQL (CI) from the same source. Surrogate
 keys are plain INTEGERs assigned in Python (not auto-increment) so inserts and
 DDL are identical across both backends.
 
-Model (Kimball-style star):
+The source data (IBM HR Analytics Employee Attrition) is a single cross-sectional
+snapshot: one row per employee with an ``attrition`` outcome. The model is a
+Kimball-style star at employee grain:
 
-  dim_date ─┐
-  dim_department ─┤
-  dim_country ─┤──< fact_headcount_monthly
-  dim_employee ─┤──< fact_exits
-                └──< fact_hiring_funnel
+  dim_department ─┐
+  dim_job_role  ─┤──< dim_employee >──┐
+  dim_education ─┘                    └──< fact_employee
 
-  quarantine  -- rejected source rows + the reason they failed DQ.
+  * dim_employee  -- one row per employee: descriptive attributes + the
+                     attrition outcome (the label).
+  * fact_employee -- one row per employee: the numeric measures (income, tenure,
+                     satisfaction scores, ...). Keyed by employee_key.
+  * quarantine    -- rejected source rows + the reason they failed DQ.
 
 `schema.sql` (committed, Postgres dialect) is generated from these tables for
 documentation; it is not the source of truth.
@@ -23,8 +27,6 @@ from __future__ import annotations
 
 from sqlalchemy import (
     Column,
-    Date,
-    Float,
     ForeignKey,
     Integer,
     MetaData,
@@ -34,34 +36,28 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-dim_country = Table(
-    "dim_country",
-    metadata,
-    Column("country_key", Integer, primary_key=True, autoincrement=False),
-    Column("country_code", String(2), nullable=False, unique=True),
-    Column("country_name", String(64), nullable=False),
-    Column("region", String(32), nullable=False),
-)
-
 dim_department = Table(
     "dim_department",
     metadata,
     Column("department_key", Integer, primary_key=True, autoincrement=False),
-    Column("department_name", String(64), nullable=False, unique=True),
+    Column("department_name", String(48), nullable=False, unique=True),
     Column("function_group", String(32), nullable=False),
 )
 
-# Monthly grain. date_key is YYYYMM (e.g. 202501) so facts join on an integer.
-dim_date = Table(
-    "dim_date",
+dim_job_role = Table(
+    "dim_job_role",
     metadata,
-    Column("date_key", Integer, primary_key=True, autoincrement=False),
-    Column("full_date", Date, nullable=False),  # first day of the month
-    Column("year", Integer, nullable=False),
-    Column("month", Integer, nullable=False),
-    Column("month_name", String(12), nullable=False),
-    Column("quarter", String(2), nullable=False),  # Q1..Q4
-    Column("year_month", String(7), nullable=False),  # 'YYYY-MM'
+    Column("job_role_key", Integer, primary_key=True, autoincrement=False),
+    Column("job_role", String(48), nullable=False, unique=True),
+    Column("department_name", String(48), nullable=False),
+)
+
+dim_education = Table(
+    "dim_education",
+    metadata,
+    Column("education_key", Integer, primary_key=True, autoincrement=False),
+    Column("education_level", Integer, nullable=False, unique=True),  # 1..5
+    Column("education_label", String(24), nullable=False),
 )
 
 dim_employee = Table(
@@ -69,81 +65,54 @@ dim_employee = Table(
     metadata,
     Column("employee_key", Integer, primary_key=True, autoincrement=False),
     Column("employee_id", String(16), nullable=False, unique=True),
-    Column("full_name", String(80), nullable=False),
-    Column("gender", String(1), nullable=False),
-    Column("country_key", Integer, ForeignKey("dim_country.country_key"), nullable=False),
-    Column(
-        "department_key",
-        Integer,
-        ForeignKey("dim_department.department_key"),
-        nullable=False,
-    ),
-    Column("grade", String(4), nullable=False),
-    Column("band", String(4), nullable=False),
-    Column("annual_ctc_usd", Integer, nullable=False),
-    Column("hire_date", Date, nullable=False),
-    Column("exit_date", Date, nullable=True),
-    Column("exit_type", String(12), nullable=True),
-    Column("exit_reason", String(32), nullable=True),
-    Column("is_active", Integer, nullable=False),  # 1/0
-    Column("latest_rating", Integer, nullable=True),
+    Column("gender", String(6), nullable=False),
+    Column("age", Integer, nullable=False),
+    Column("marital_status", String(12), nullable=False),
+    Column("business_travel", String(20), nullable=False),
+    Column("overtime", String(3), nullable=False),  # 'Yes' / 'No'
+    Column("department_key", Integer, ForeignKey("dim_department.department_key"), nullable=False),
+    Column("job_role_key", Integer, ForeignKey("dim_job_role.job_role_key"), nullable=False),
+    Column("education_key", Integer, ForeignKey("dim_education.education_key"), nullable=False),
+    Column("education_field", String(24), nullable=False),
+    Column("job_level", Integer, nullable=False),  # 1..5
+    # The outcome / label: 1 = the employee left, 0 = still employed.
+    Column("attrition", Integer, nullable=False),
 )
 
-fact_headcount_monthly = Table(
-    "fact_headcount_monthly",
+fact_employee = Table(
+    "fact_employee",
     metadata,
-    Column("date_key", Integer, ForeignKey("dim_date.date_key"), nullable=False),
     Column(
-        "department_key",
+        "employee_key",
         Integer,
-        ForeignKey("dim_department.department_key"),
-        nullable=False,
+        ForeignKey("dim_employee.employee_key"),
+        primary_key=True,
+        autoincrement=False,
     ),
-    Column("country_key", Integer, ForeignKey("dim_country.country_key"), nullable=False),
-    Column("grade", String(4), nullable=False),
-    Column("gender", String(1), nullable=False),
-    Column("headcount", Integer, nullable=False),
-)
-
-fact_exits = Table(
-    "fact_exits",
-    metadata,
-    Column("exit_key", Integer, primary_key=True, autoincrement=False),
-    Column("date_key", Integer, ForeignKey("dim_date.date_key"), nullable=False),
-    Column("employee_key", Integer, ForeignKey("dim_employee.employee_key"), nullable=False),
-    Column(
-        "department_key",
-        Integer,
-        ForeignKey("dim_department.department_key"),
-        nullable=False,
-    ),
-    Column("country_key", Integer, ForeignKey("dim_country.country_key"), nullable=False),
-    Column("grade", String(4), nullable=False),
-    Column("gender", String(1), nullable=False),
-    Column("exit_type", String(12), nullable=False),
-    Column("exit_reason", String(32), nullable=False),
-    Column("tenure_days", Integer, nullable=False),
-)
-
-fact_hiring_funnel = Table(
-    "fact_hiring_funnel",
-    metadata,
-    Column("funnel_key", Integer, primary_key=True, autoincrement=False),
-    Column("date_key", Integer, ForeignKey("dim_date.date_key"), nullable=False),
-    Column(
-        "department_key",
-        Integer,
-        ForeignKey("dim_department.department_key"),
-        nullable=False,
-    ),
-    Column("country_key", Integer, ForeignKey("dim_country.country_key"), nullable=False),
-    Column("applications", Integer, nullable=False),
-    Column("screened", Integer, nullable=False),
-    Column("interviewed", Integer, nullable=False),
-    Column("offers", Integer, nullable=False),
-    Column("accepts", Integer, nullable=False),
-    Column("hires", Integer, nullable=False),
-    Column("avg_time_to_hire_days", Float, nullable=False),
+    Column("department_key", Integer, ForeignKey("dim_department.department_key"), nullable=False),
+    Column("job_role_key", Integer, ForeignKey("dim_job_role.job_role_key"), nullable=False),
+    Column("monthly_income", Integer, nullable=False),
+    Column("daily_rate", Integer, nullable=False),
+    Column("hourly_rate", Integer, nullable=False),
+    Column("monthly_rate", Integer, nullable=False),
+    Column("distance_from_home", Integer, nullable=False),
+    Column("total_working_years", Integer, nullable=False),
+    Column("years_at_company", Integer, nullable=False),
+    Column("years_in_current_role", Integer, nullable=False),
+    Column("years_since_last_promotion", Integer, nullable=False),
+    Column("years_with_curr_manager", Integer, nullable=False),
+    Column("num_companies_worked", Integer, nullable=False),
+    Column("percent_salary_hike", Integer, nullable=False),
+    Column("training_times_last_year", Integer, nullable=False),
+    Column("job_satisfaction", Integer, nullable=False),  # 1..4
+    Column("environment_satisfaction", Integer, nullable=False),  # 1..4
+    Column("job_involvement", Integer, nullable=False),  # 1..4
+    Column("relationship_satisfaction", Integer, nullable=False),  # 1..4
+    Column("work_life_balance", Integer, nullable=False),  # 1..4
+    Column("performance_rating", Integer, nullable=False),  # 3..4
+    Column("stock_option_level", Integer, nullable=False),  # 0..3
+    # Mirror of the label so measure-only views need not join dim_employee.
+    Column("attrition", Integer, nullable=False),
 )
 
 quarantine = Table(
@@ -158,12 +127,10 @@ quarantine = Table(
 
 # Tables that are rebuilt on every load, in dependency-safe order.
 ALL_TABLES = [
-    dim_country,
     dim_department,
-    dim_date,
+    dim_job_role,
+    dim_education,
     dim_employee,
-    fact_headcount_monthly,
-    fact_exits,
-    fact_hiring_funnel,
+    fact_employee,
     quarantine,
 ]

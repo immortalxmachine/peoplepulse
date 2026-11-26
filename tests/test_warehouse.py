@@ -15,27 +15,17 @@ def _scalar(sql: str):
 
 
 def test_dimensions_and_facts_loaded(warehouse):
-    assert _scalar("SELECT COUNT(*) FROM dim_employee") == 2000
-    assert _scalar("SELECT COUNT(*) FROM dim_country") == 3
-    assert _scalar("SELECT COUNT(*) FROM dim_department") == 8
-    assert _scalar("SELECT COUNT(*) FROM dim_date") == 36
-    assert _scalar("SELECT COUNT(*) FROM fact_headcount_monthly") > 0
-    assert _scalar("SELECT COUNT(*) FROM fact_exits") > 0
+    # The real IBM HR dataset has 1,470 employees, 3 departments, 9 job roles.
+    assert _scalar("SELECT COUNT(*) FROM dim_employee") == 1470
+    assert _scalar("SELECT COUNT(*) FROM fact_employee") == 1470
+    assert _scalar("SELECT COUNT(*) FROM dim_department") == 3
+    assert _scalar("SELECT COUNT(*) FROM dim_job_role") == 9
+    assert _scalar("SELECT COUNT(*) FROM dim_education") == 5
 
 
-def test_eight_rows_quarantined_with_reasons(warehouse):
-    assert _scalar("SELECT COUNT(*) FROM quarantine") == 8
-    with create_engine(database_url()).connect() as c:
-        reasons = {
-            r[0] for r in c.execute(text("SELECT DISTINCT reason FROM quarantine"))
-        }
-    assert reasons == {
-        "null_employee_id",
-        "duplicate_employee_id",
-        "invalid_hire_date",
-        "exit_before_hire",
-        "unknown_country",
-    }
+def test_clean_source_has_no_quarantine(warehouse):
+    # The published dataset is clean -> every row passes DQ, nothing quarantined.
+    assert _scalar("SELECT COUNT(*) FROM quarantine") == 0
 
 
 def test_all_views_return_rows(warehouse):
@@ -44,12 +34,15 @@ def test_all_views_return_rows(warehouse):
 
 
 def test_attrition_is_plausible(warehouse):
-    # Rolling 12-month attrition should sit in a sane HR range.
-    v = _scalar(
-        "SELECT rolling_12m_attrition_pct FROM v_attrition_monthly "
-        "ORDER BY date_key DESC LIMIT 1"
-    )
-    assert 2.0 < v < 50.0
+    v = _scalar("SELECT attrition_pct FROM v_attrition_overall")
+    assert 2.0 < v < 50.0  # ~16% in this dataset
+
+
+def test_overtime_raises_attrition(warehouse):
+    # A known, real signal in this dataset: overtime workers churn far more.
+    yes = _scalar("SELECT attrition_pct FROM v_attrition_by_overtime WHERE overtime = 'Yes'")
+    no = _scalar("SELECT attrition_pct FROM v_attrition_by_overtime WHERE overtime = 'No'")
+    assert yes > no
 
 
 def test_views_parse_as_postgres():

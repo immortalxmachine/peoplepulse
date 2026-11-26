@@ -19,12 +19,12 @@ def test_views_lists_only_views():
     r = client.get("/views")
     assert r.status_code == 200
     views = r.json()["allowed_views"]
-    assert "v_headcount_trend" in views
+    assert "v_attrition_overall" in views
     assert "dim_employee" not in views  # base tables never exposed
 
 
 def test_query_happy_path(warehouse):
-    r = client.post("/query", json={"question": "What is the total headcount?"})
+    r = client.post("/query", json={"question": "What is the overall attrition rate?"})
     body = r.json()
     assert r.status_code == 200
     assert body["refused"] is False

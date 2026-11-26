@@ -1,43 +1,44 @@
 {
-  "note": "SYNTHETIC data. All numbers from real runs on the local warehouse.",
+  "note": "REAL data: IBM HR Analytics Employee Attrition (Kaggle, DbCL-1.0). All numbers from real runs on the local warehouse.",
   "data": {
-    "employees_generated": 2008,
-    "rows_quarantined": 8,
-    "performance_rows": 4293,
-    "hiring_funnel_rows": 855,
-    "fact_headcount_rows": 8157,
-    "fact_exits_rows": 591
+    "dataset": "IBM HR Analytics Employee Attrition & Performance (Kaggle)",
+    "employees_loaded": 1470,
+    "leavers": 237,
+    "rows_quarantined": 0,
+    "departments": 3,
+    "job_roles": 9
   },
   "warehouse": {
-    "mis_views": 10,
-    "dimensions": 4,
-    "facts": 3
+    "mis_views": 11,
+    "dimensions": 3,
+    "facts": 1
   },
   "model": {
-    "train_cutoff": "2023-12-31",
-    "test_cutoff": "2024-12-31",
-    "test_attrition_rate": 0.1757,
+    "validation": "stratified hold-out",
+    "test_size": 0.25,
+    "overall_attrition_rate": 0.1612,
+    "test_attrition_rate": 0.1603,
     "baseline_f1": 0.0,
     "logreg": {
-      "precision": 0.2351,
-      "recall": 0.5596,
-      "f1": 0.3311,
-      "roc_auc": 0.6327
+      "precision": 0.4086,
+      "recall": 0.6441,
+      "f1": 0.5,
+      "roc_auc": 0.8178
     },
     "gradient_boosting": {
-      "precision": 0.2763,
-      "recall": 0.3853,
-      "f1": 0.3218,
-      "roc_auc": 0.6289
+      "precision": 0.44,
+      "recall": 0.5593,
+      "f1": 0.4925,
+      "roc_auc": 0.7793
     }
   },
   "genai": {
-    "nl2sql_questions": 25,
+    "nl2sql_questions": 15,
     "nl2sql_exact_match_accuracy": 1.0,
     "adversarial_prompts": 10,
     "guardrail_block_rate": 1.0
   },
   "tests": {
-    "count": 34
+    "count": 36
   }
 }

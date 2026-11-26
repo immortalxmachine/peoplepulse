@@ -3,7 +3,12 @@
 The Streamlit app (`peoplepulse/dashboard/app.py`) is the live dashboard. This
 guide reproduces the same MIS in **Power BI Desktop** over the exported star
 schema, so the project also demonstrates the Power BI / DAX workflow the JD asks
-for. All data is **SYNTHETIC**.
+for.
+
+Data is the **real** IBM HR Analytics Employee Attrition dataset (Kaggle,
+DbCL-1.0) — a cross-sectional snapshot of 1,470 employees. There is one row per
+employee with an `attrition` outcome (no dates), so the measures below are
+cross-sectional cuts, not time series.
 
 > You build the `.pbix` in Power BI Desktop (it is a binary file not committed
 > here). Follow the steps below — they take ~15 minutes.
@@ -18,32 +23,30 @@ This writes one CSV per table/view to `data_out/export/`. For Power BI you need
 the dimension and fact tables:
 
 ```
-dim_date.csv  dim_department.csv  dim_country.csv  dim_employee.csv
-fact_headcount_monthly.csv  fact_exits.csv  fact_hiring_funnel.csv
+dim_department.csv  dim_job_role.csv  dim_education.csv
+dim_employee.csv    fact_employee.csv
 ```
 
 ## 2. Import into Power BI Desktop
 
-1. **Home → Get data → Text/CSV** and load the seven files above.
-2. In **Transform data (Power Query)**, confirm types: `date_key` = Whole
-   Number, `full_date` = Date, measures = Whole Number / Decimal. Close & Apply.
+1. **Home → Get data → Text/CSV** and load the five files above.
+2. In **Transform data (Power Query)**, confirm types: keys = Whole Number,
+   `monthly_income` / rates = Whole Number, `attrition` = Whole Number (1/0).
+   Close & Apply.
 
 ## 3. Model the star schema (Model view)
 
-Create these relationships (all **one-to-many**, single direction from the
-dimension to the fact):
+Create these relationships (single direction from the dimension to the fact):
 
 | From (1) | To (\*) |
 |---|---|
-| `dim_date[date_key]` | `fact_headcount_monthly[date_key]` |
-| `dim_date[date_key]` | `fact_exits[date_key]` |
-| `dim_date[date_key]` | `fact_hiring_funnel[date_key]` |
-| `dim_department[department_key]` | each fact's `department_key` |
-| `dim_country[country_key]` | each fact's `country_key` |
-| `dim_employee[employee_key]` | `fact_exits[employee_key]` |
+| `dim_department[department_key]` | `dim_employee[department_key]` |
+| `dim_job_role[job_role_key]` | `dim_employee[job_role_key]` |
+| `dim_education[education_key]` | `dim_employee[education_key]` |
+| `dim_employee[employee_key]` | `fact_employee[employee_key]` |
 
-Mark **`dim_date`** as a date table (Table tools → Mark as date table →
-`full_date`).
+(`dim_employee` → `fact_employee` is one row to one row; model it as 1-to-1 or
+1-to-many, cross-filter both directions.)
 
 ## 4. DAX measures
 
@@ -51,78 +54,40 @@ Create a measures table (Home → Enter data → empty table named `_Measures`) 
 add:
 
 ```dax
--- Headcount (respects the current month/dept/country filter context)
-Headcount = SUM ( fact_headcount_monthly[headcount] )
+Employees = COUNTROWS ( dim_employee )
 
-Current Headcount =
-CALCULATE ( [Headcount], dim_date[date_key] = MAX ( dim_date[date_key] ) )
+Leavers = CALCULATE ( [Employees], dim_employee[attrition] = 1 )
 
-Exits = COUNTROWS ( fact_exits )
+Attrition % = DIVIDE ( [Leavers], [Employees] )
 
-Voluntary Exits =
-CALCULATE ( [Exits], fact_exits[exit_type] = "Voluntary" )
+Avg Monthly Income = AVERAGE ( fact_employee[monthly_income] )
 
-Involuntary Exits =
-CALCULATE ( [Exits], fact_exits[exit_type] = "Involuntary" )
-
--- Average month-end headcount across the periods in context
-Avg Headcount =
-AVERAGEX ( VALUES ( dim_date[date_key] ), [Headcount] )
-
-Monthly Attrition % =
-DIVIDE ( [Exits], [Avg Headcount] )
-
--- Rolling 12-month (annualised) attrition
-Rolling 12M Exits =
-CALCULATE (
-    [Exits],
-    DATESINPERIOD ( dim_date[full_date], MAX ( dim_date[full_date] ), -12, MONTH )
-)
-
-Rolling 12M Avg Headcount =
-AVERAGEX (
-    DATESINPERIOD ( dim_date[full_date], MAX ( dim_date[full_date] ), -12, MONTH ),
-    [Headcount]
-)
-
-Rolling 12M Attrition % =
-DIVIDE ( [Rolling 12M Exits], [Rolling 12M Avg Headcount] )
-
--- Recruiting
-Hires  = SUM ( fact_hiring_funnel[hires] )
-Offers = SUM ( fact_hiring_funnel[offers] )
-Accepts = SUM ( fact_hiring_funnel[accepts] )
-
-Offer Acceptance % = DIVIDE ( [Accepts], [Offers] )
-
-Avg Time To Hire =
-DIVIDE (
-    SUMX ( fact_hiring_funnel,
-           fact_hiring_funnel[avg_time_to_hire_days] * fact_hiring_funnel[hires] ),
-    [Hires]
-)
+Avg Years At Company = AVERAGE ( fact_employee[years_at_company] )
 
 -- Diversity
-Female Headcount =
-CALCULATE ( [Headcount], fact_headcount_monthly[gender] = "F" )
+Female Employees =
+CALCULATE ( [Employees], dim_employee[gender] = "Female" )
 
-Female % = DIVIDE ( [Female Headcount], [Headcount] )
+Female % = DIVIDE ( [Female Employees], [Employees] )
+
+-- A known real driver: overtime raises attrition sharply
+Attrition % (Overtime) =
+CALCULATE ( [Attrition %], dim_employee[overtime] = "Yes" )
 ```
 
-Format the `%` measures as Percentage, `Avg Time To Hire` as Decimal (1 dp).
+Format `Attrition %` and `Female %` as Percentage, income as Whole Number.
 
 ## 5. Suggested report pages / visuals
 
 | Visual | Fields |
 |---|---|
-| KPI cards | `Current Headcount`, `Rolling 12M Attrition %`, `Avg Time To Hire`, `Offer Acceptance %` |
-| Line chart | Axis `dim_date[full_date]`, values `Headcount` |
-| Line chart | Axis `full_date`, values `Monthly Attrition %` and `Rolling 12M Attrition %` |
-| Clustered bar | Axis `dim_department[department_name]`, value `Avg Time To Hire`, legend `dim_country[country_name]` |
-| Matrix | Rows `department_name`, columns `country_name`, value `Rolling 12M Attrition %` |
-| Stacked column | Axis `dim_employee[grade]`, values `Female %` |
-| Donut | Legend `fact_exits[exit_type]`, value `Exits` |
-| Slicers | `dim_country[country_name]`, `dim_date[year]` |
+| KPI cards | `Employees`, `Attrition %`, `Avg Monthly Income` |
+| Clustered bar | Axis `dim_department[department_name]`, value `Attrition %` |
+| Clustered bar | Axis `dim_job_role[job_role]`, value `Attrition %` |
+| Clustered bar | Axis `dim_employee[overtime]`, value `Attrition %` |
+| Clustered bar | Axis `dim_employee[job_level]`, value `Attrition %` |
+| Stacked column | Axis `dim_department[department_name]`, value `Female %` |
+| Slicers | `dim_department[department_name]`, `dim_employee[overtime]`, `dim_employee[job_level]` |
 
-The matrix + slicers reproduce the GenAI assistant's flagship question —
-"attrition in UAE engineering" — as an interactive cross-tab.
+The overtime slicer reproduces the assistant's flagship question — "attrition for
+employees working overtime" — as an interactive cut.

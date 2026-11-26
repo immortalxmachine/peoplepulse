@@ -3,102 +3,80 @@
 -- which is the source of truth. Regenerate: python -m peoplepulse.warehouse.emit_sql
 -- Local dev uses SQLite; CI runs this same model on PostgreSQL 16.
 
-CREATE TABLE dim_country (
-	country_key INTEGER NOT NULL, 
-	country_code VARCHAR(2) NOT NULL, 
-	country_name VARCHAR(64) NOT NULL, 
-	region VARCHAR(32) NOT NULL, 
-	PRIMARY KEY (country_key), 
-	UNIQUE (country_code)
-);
-
 CREATE TABLE dim_department (
 	department_key INTEGER NOT NULL, 
-	department_name VARCHAR(64) NOT NULL, 
+	department_name VARCHAR(48) NOT NULL, 
 	function_group VARCHAR(32) NOT NULL, 
 	PRIMARY KEY (department_key), 
 	UNIQUE (department_name)
 );
 
-CREATE TABLE dim_date (
-	date_key INTEGER NOT NULL, 
-	full_date DATE NOT NULL, 
-	year INTEGER NOT NULL, 
-	month INTEGER NOT NULL, 
-	month_name VARCHAR(12) NOT NULL, 
-	quarter VARCHAR(2) NOT NULL, 
-	year_month VARCHAR(7) NOT NULL, 
-	PRIMARY KEY (date_key)
+CREATE TABLE dim_job_role (
+	job_role_key INTEGER NOT NULL, 
+	job_role VARCHAR(48) NOT NULL, 
+	department_name VARCHAR(48) NOT NULL, 
+	PRIMARY KEY (job_role_key), 
+	UNIQUE (job_role)
+);
+
+CREATE TABLE dim_education (
+	education_key INTEGER NOT NULL, 
+	education_level INTEGER NOT NULL, 
+	education_label VARCHAR(24) NOT NULL, 
+	PRIMARY KEY (education_key), 
+	UNIQUE (education_level)
 );
 
 CREATE TABLE dim_employee (
 	employee_key INTEGER NOT NULL, 
 	employee_id VARCHAR(16) NOT NULL, 
-	full_name VARCHAR(80) NOT NULL, 
-	gender VARCHAR(1) NOT NULL, 
-	country_key INTEGER NOT NULL, 
+	gender VARCHAR(6) NOT NULL, 
+	age INTEGER NOT NULL, 
+	marital_status VARCHAR(12) NOT NULL, 
+	business_travel VARCHAR(20) NOT NULL, 
+	overtime VARCHAR(3) NOT NULL, 
 	department_key INTEGER NOT NULL, 
-	grade VARCHAR(4) NOT NULL, 
-	band VARCHAR(4) NOT NULL, 
-	annual_ctc_usd INTEGER NOT NULL, 
-	hire_date DATE NOT NULL, 
-	exit_date DATE, 
-	exit_type VARCHAR(12), 
-	exit_reason VARCHAR(32), 
-	is_active INTEGER NOT NULL, 
-	latest_rating INTEGER, 
+	job_role_key INTEGER NOT NULL, 
+	education_key INTEGER NOT NULL, 
+	education_field VARCHAR(24) NOT NULL, 
+	job_level INTEGER NOT NULL, 
+	attrition INTEGER NOT NULL, 
 	PRIMARY KEY (employee_key), 
 	UNIQUE (employee_id), 
-	FOREIGN KEY(country_key) REFERENCES dim_country (country_key), 
-	FOREIGN KEY(department_key) REFERENCES dim_department (department_key)
-);
-
-CREATE TABLE fact_headcount_monthly (
-	date_key INTEGER NOT NULL, 
-	department_key INTEGER NOT NULL, 
-	country_key INTEGER NOT NULL, 
-	grade VARCHAR(4) NOT NULL, 
-	gender VARCHAR(1) NOT NULL, 
-	headcount INTEGER NOT NULL, 
-	FOREIGN KEY(date_key) REFERENCES dim_date (date_key), 
 	FOREIGN KEY(department_key) REFERENCES dim_department (department_key), 
-	FOREIGN KEY(country_key) REFERENCES dim_country (country_key)
+	FOREIGN KEY(job_role_key) REFERENCES dim_job_role (job_role_key), 
+	FOREIGN KEY(education_key) REFERENCES dim_education (education_key)
 );
 
-CREATE TABLE fact_exits (
-	exit_key INTEGER NOT NULL, 
-	date_key INTEGER NOT NULL, 
+CREATE TABLE fact_employee (
 	employee_key INTEGER NOT NULL, 
 	department_key INTEGER NOT NULL, 
-	country_key INTEGER NOT NULL, 
-	grade VARCHAR(4) NOT NULL, 
-	gender VARCHAR(1) NOT NULL, 
-	exit_type VARCHAR(12) NOT NULL, 
-	exit_reason VARCHAR(32) NOT NULL, 
-	tenure_days INTEGER NOT NULL, 
-	PRIMARY KEY (exit_key), 
-	FOREIGN KEY(date_key) REFERENCES dim_date (date_key), 
+	job_role_key INTEGER NOT NULL, 
+	monthly_income INTEGER NOT NULL, 
+	daily_rate INTEGER NOT NULL, 
+	hourly_rate INTEGER NOT NULL, 
+	monthly_rate INTEGER NOT NULL, 
+	distance_from_home INTEGER NOT NULL, 
+	total_working_years INTEGER NOT NULL, 
+	years_at_company INTEGER NOT NULL, 
+	years_in_current_role INTEGER NOT NULL, 
+	years_since_last_promotion INTEGER NOT NULL, 
+	years_with_curr_manager INTEGER NOT NULL, 
+	num_companies_worked INTEGER NOT NULL, 
+	percent_salary_hike INTEGER NOT NULL, 
+	training_times_last_year INTEGER NOT NULL, 
+	job_satisfaction INTEGER NOT NULL, 
+	environment_satisfaction INTEGER NOT NULL, 
+	job_involvement INTEGER NOT NULL, 
+	relationship_satisfaction INTEGER NOT NULL, 
+	work_life_balance INTEGER NOT NULL, 
+	performance_rating INTEGER NOT NULL, 
+	stock_option_level INTEGER NOT NULL, 
+	attrition INTEGER NOT NULL, 
+	PRIMARY KEY (employee_key), 
 	FOREIGN KEY(employee_key) REFERENCES dim_employee (employee_key), 
 	FOREIGN KEY(department_key) REFERENCES dim_department (department_key), 
-	FOREIGN KEY(country_key) REFERENCES dim_country (country_key)
-);
-
-CREATE TABLE fact_hiring_funnel (
-	funnel_key INTEGER NOT NULL, 
-	date_key INTEGER NOT NULL, 
-	department_key INTEGER NOT NULL, 
-	country_key INTEGER NOT NULL, 
-	applications INTEGER NOT NULL, 
-	screened INTEGER NOT NULL, 
-	interviewed INTEGER NOT NULL, 
-	offers INTEGER NOT NULL, 
-	accepts INTEGER NOT NULL, 
-	hires INTEGER NOT NULL, 
-	avg_time_to_hire_days FLOAT NOT NULL, 
-	PRIMARY KEY (funnel_key), 
-	FOREIGN KEY(date_key) REFERENCES dim_date (date_key), 
-	FOREIGN KEY(department_key) REFERENCES dim_department (department_key), 
-	FOREIGN KEY(country_key) REFERENCES dim_country (country_key)
+	FOREIGN KEY(job_role_key) REFERENCES dim_job_role (job_role_key)
 );
 
 CREATE TABLE quarantine (

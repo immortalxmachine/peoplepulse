@@ -11,6 +11,10 @@ LLM_PROVIDER selects one:
 Every provider returns raw SQL text (or None if it cannot answer). That SQL is
 ALWAYS run through api/guardrails.py before execution -- providers are never
 trusted, LLM or not.
+
+The warehouse is the REAL IBM HR Attrition dataset (cross-sectional), so the
+assistant answers cross-sectional attrition / pay / diversity questions over the
+MIS v_* views. There are no time-series questions (the data has no dates).
 """
 
 from __future__ import annotations
@@ -21,49 +25,39 @@ from peoplepulse import config
 
 # Short schema description handed to a real LLM so it targets the MIS views.
 SCHEMA_DOC = """You translate HR analytics questions into a single read-only
-PostgreSQL SELECT over ONLY these views (never any other table):
+PostgreSQL SELECT over ONLY these views (never any other table). The data is a
+cross-sectional snapshot of 1,470 employees with an attrition outcome.
 
-  v_headcount_trend(year_month, total_headcount)
-  v_headcount_monthly(year_month, year, department_name, country_name, grade, gender, headcount)
-  v_attrition_monthly(year_month, exits, end_headcount,
-                      monthly_attrition_pct, rolling_12m_attrition_pct)
-  v_attrition_by_segment(year_month, year, department_name, country_name,
-                         exits, end_headcount, attrition_pct)
-  v_exits_by_type(year_month, year, exit_type, exits)
-  v_exit_reasons(exit_type, exit_reason, exits, pct_of_all_exits)
-  v_tenure_buckets(tenure_bucket, bucket_order, exits, avg_tenure_days)
-  v_time_to_hire(year_month, year, department_name, country_name,
-                 hires, avg_time_to_hire_days)
-  v_offer_acceptance(year_month, year, department_name, country_name,
-                     offers, accepts, offer_acceptance_pct)
-  v_gender_diversity_by_grade(grade, female_headcount, male_headcount,
-                              total_headcount, female_pct)
+  v_attrition_overall(total_employees, leavers, attrition_pct)
+  v_attrition_by_department(department_name, function_group, employees, leavers, attrition_pct)
+  v_attrition_by_job_role(job_role, department_name, employees, leavers, attrition_pct)
+  v_attrition_by_overtime(overtime, employees, leavers, attrition_pct)
+  v_attrition_by_job_level(job_level, employees, leavers, attrition_pct)
+  v_attrition_by_tenure_bucket(tenure_bucket, bucket_order, employees, leavers, attrition_pct)
+  v_attrition_by_income_band(income_band, band_order, employees, leavers, attrition_pct)
+  v_attrition_by_age_band(age_band, band_order, employees, leavers, attrition_pct)
+  v_satisfaction_by_attrition(attrition, employees, avg_job_satisfaction,
+                              avg_environment_satisfaction, avg_work_life_balance,
+                              avg_job_involvement)
+  v_income_by_department(department_name, employees, avg_monthly_income)
+  v_gender_diversity(department_name, female_headcount, male_headcount,
+                     total_headcount, female_pct)
 
+Departments are exactly: 'Sales', 'Research & Development', 'Human Resources'.
+overtime is 'Yes'/'No'. attrition is 1 (left) / 0 (stayed).
 Rules: one SELECT only; no writes/DDL; never reference employee-level tables;
 return ONLY the SQL, no prose, no markdown fences."""
 
 # --- shared filter extraction (used by the mock) -----------------------------
-_COUNTRY = {
-    "india": "India",
-    "uae": "United Arab Emirates",
-    "united arab emirates": "United Arab Emirates",
-    "emirates": "United Arab Emirates",
-    "dubai": "United Arab Emirates",
-    "germany": "Germany",
-    "german": "Germany",
-}
 _DEPT = {
-    "engineering": "Engineering",
-    "engineer": "Engineering",
-    "product": "Product",
+    "research & development": "Research & Development",
+    "research and development": "Research & Development",
+    "r&d": "Research & Development",
+    "research": "Research & Development",
+    "development": "Research & Development",
     "sales": "Sales",
-    "marketing": "Marketing",
-    "customer support": "Customer Support",
-    "support": "Customer Support",
-    "finance": "Finance",
     "human resources": "Human Resources",
     " hr ": "Human Resources",
-    "operations": "Operations",
 }
 
 
@@ -74,26 +68,9 @@ def _find(mapping: dict[str, str], text: str) -> str | None:
     return None
 
 
-def _year(text: str) -> int | None:
-    m = re.search(r"\b(2023|2024|2025)\b", text)
+def _job_level(text: str) -> int | None:
+    m = re.search(r"\b(?:job\s*)?level\s*([1-5])\b", text)
     return int(m.group(1)) if m else None
-
-
-def _grade(text: str) -> str | None:
-    m = re.search(r"\b(?:grade\s*)?g?([1-6])\b", text)
-    if m and ("grade" in text or re.search(r"\bg[1-6]\b", text)):
-        return f"G{m.group(1)}"
-    return None
-
-
-def _where(pairs: list[tuple[str, object]]) -> str:
-    """Build a WHERE clause from (column, value) pairs (fixed vocab, no injection)."""
-    clauses = []
-    for col, val in pairs:
-        if val is None:
-            continue
-        clauses.append(f"{col} = {val}" if isinstance(val, int) else f"{col} = '{val}'")
-    return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
 
 class MockProvider:
@@ -103,85 +80,72 @@ class MockProvider:
 
     def to_sql(self, question: str) -> str | None:
         q = f" {question.lower()} "
-        country = _find(_COUNTRY, q)
         dept = _find(_DEPT, q)
-        year = _year(q)
-        grade = _grade(q)
+        level = _job_level(q)
+        overtime = None
+        if "overtime" in q or "over time" in q:
+            negated = any(n in q for n in ("no overtime", "not work", "without overtime",
+                                           "do not", "don't", "never work"))
+            overtime = "No" if negated else "Yes"
 
-        # --- attrition / turnover ------------------------------------------
-        if "attrition" in q or "turnover" in q or "attrit" in q:
-            where = _where(
-                [("country_name", country), ("department_name", dept), ("year", year)]
-            )
-            return (
-                "SELECT 100.0 * SUM(exits) / NULLIF(AVG(end_headcount), 0) "
-                f"AS attrition_pct FROM v_attrition_by_segment{where}"
-            )
+        # --- counts (leavers before total, so "how many left" is not caught) --
+        if ("how many" in q and ("left" in q or "leavers" in q or "quit" in q
+                                 or "churned" in q)) or "number of leavers" in q:
+            return "SELECT leavers FROM v_attrition_overall"
+        if ("how many employees" in q or "total employees" in q
+                or "total headcount" in q or "number of employees" in q
+                or "workforce" in q or "headcount" in q):
+            return "SELECT total_employees FROM v_attrition_overall"
 
-        # --- offer acceptance ----------------------------------------------
-        if "offer" in q and ("accept" in q or "acceptance" in q):
-            where = _where(
-                [("country_name", country), ("department_name", dept), ("year", year)]
-            )
+        # --- income / pay --------------------------------------------------
+        if "income" in q or "salary" in q or "pay" in q or "compensation" in q:
+            if dept:
+                return (
+                    "SELECT avg_monthly_income FROM v_income_by_department "
+                    f"WHERE department_name = '{dept}'"
+                )
             return (
-                "SELECT 100.0 * SUM(accepts) / NULLIF(SUM(offers), 0) "
-                f"AS offer_acceptance_pct FROM v_offer_acceptance{where}"
-            )
-
-        # --- time to hire --------------------------------------------------
-        if "time to hire" in q or "time-to-hire" in q or ("hire" in q and "time" in q):
-            where = _where(
-                [("country_name", country), ("department_name", dept), ("year", year)]
-            )
-            return (
-                "SELECT SUM(avg_time_to_hire_days * hires) / NULLIF(SUM(hires), 0) "
-                f"AS avg_time_to_hire_days FROM v_time_to_hire{where}"
+                "SELECT SUM(avg_monthly_income * employees) / NULLIF(SUM(employees), 0) "
+                "AS avg_monthly_income FROM v_income_by_department"
             )
 
         # --- gender diversity ----------------------------------------------
         if "diversity" in q or "gender" in q or "female" in q or "women" in q:
-            if grade:
-                return f"SELECT female_pct FROM v_gender_diversity_by_grade WHERE grade = '{grade}'"
+            if dept:
+                return (
+                    "SELECT female_pct FROM v_gender_diversity "
+                    f"WHERE department_name = '{dept}'"
+                )
             return (
                 "SELECT 100.0 * SUM(female_headcount) / NULLIF(SUM(total_headcount), 0) "
-                "AS female_pct FROM v_gender_diversity_by_grade"
+                "AS female_pct FROM v_gender_diversity"
             )
 
-        # --- voluntary / involuntary exits ---------------------------------
-        if "voluntary" in q or "involuntary" in q:
-            exit_type = "Involuntary" if "involuntary" in q else "Voluntary"
-            where = _where([("exit_type", exit_type), ("year", year)])
-            return f"SELECT SUM(exits) AS exits FROM v_exits_by_type{where}"
-
-        # --- tenure at exit ------------------------------------------------
-        if "tenure" in q:
+        # --- satisfaction --------------------------------------------------
+        if "satisfaction" in q or "work-life" in q or "work life" in q or "engagement" in q:
             return (
-                "SELECT tenure_bucket FROM v_tenure_buckets "
-                "ORDER BY exits DESC LIMIT 1"
+                "SELECT attrition, avg_job_satisfaction, avg_work_life_balance "
+                "FROM v_satisfaction_by_attrition ORDER BY attrition"
             )
 
-        # --- exit reasons --------------------------------------------------
-        if "reason" in q or "why" in q:
-            return (
-                "SELECT exit_reason FROM v_exit_reasons ORDER BY exits DESC LIMIT 1"
-            )
-
-        # --- headcount (checked last; keywords are generic) ----------------
-        if (
-            "headcount" in q
-            or "how many employees" in q
-            or "total employees" in q
-            or "workforce" in q
-            or "team size" in q
-            or "number of employees" in q
-        ):
-            year_filter = f" WHERE year = {year}" if year else ""
-            where = _where([("country_name", country), ("department_name", dept)])
-            # Sum the latest monthly snapshot (within the year if one was given).
-            sub = f"(SELECT MAX(year_month) FROM v_headcount_monthly{year_filter})"
-            base = f"WHERE year_month = {sub}"
-            extra = where.replace(" WHERE ", " AND ") if where else ""
-            return f"SELECT SUM(headcount) AS headcount FROM v_headcount_monthly {base}{extra}"
+        # --- attrition / turnover (checked after the specific cuts) --------
+        if "attrition" in q or "turnover" in q or "attrit" in q or "leave" in q or "quit" in q:
+            if overtime:
+                return (
+                    "SELECT attrition_pct FROM v_attrition_by_overtime "
+                    f"WHERE overtime = '{overtime}'"
+                )
+            if level is not None:
+                return (
+                    "SELECT attrition_pct FROM v_attrition_by_job_level "
+                    f"WHERE job_level = {level}"
+                )
+            if dept:
+                return (
+                    "SELECT attrition_pct FROM v_attrition_by_department "
+                    f"WHERE department_name = '{dept}'"
+                )
+            return "SELECT attrition_pct FROM v_attrition_overall"
 
         return None  # not understood -> caller refuses as out_of_scope
 
