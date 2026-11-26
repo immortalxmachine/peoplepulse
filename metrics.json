@@ -1,0 +1,43 @@
+{
+  "note": "SYNTHETIC data. All numbers from real runs on the local warehouse.",
+  "data": {
+    "employees_generated": 2008,
+    "rows_quarantined": 8,
+    "performance_rows": 4293,
+    "hiring_funnel_rows": 855,
+    "fact_headcount_rows": 8157,
+    "fact_exits_rows": 591
+  },
+  "warehouse": {
+    "mis_views": 10,
+    "dimensions": 4,
+    "facts": 3
+  },
+  "model": {
+    "train_cutoff": "2023-12-31",
+    "test_cutoff": "2024-12-31",
+    "test_attrition_rate": 0.1757,
+    "baseline_f1": 0.0,
+    "logreg": {
+      "precision": 0.2351,
+      "recall": 0.5596,
+      "f1": 0.3311,
+      "roc_auc": 0.6327
+    },
+    "gradient_boosting": {
+      "precision": 0.2763,
+      "recall": 0.3853,
+      "f1": 0.3218,
+      "roc_auc": 0.6289
+    }
+  },
+  "genai": {
+    "nl2sql_questions": 25,
+    "nl2sql_exact_match_accuracy": 1.0,
+    "adversarial_prompts": 10,
+    "guardrail_block_rate": 1.0
+  },
+  "tests": {
+    "count": 34
+  }
+}
