@@ -16,3 +16,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Put the repo root on sys.path so `peoplepulse` and `eval` import whether
+# pytest is run as `pytest` (CI) or `python -m pytest` (local).
+pythonpath = ["."]
