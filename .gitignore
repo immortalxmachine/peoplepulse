@@ -23,3 +23,6 @@ models/*.joblib
 Thumbs.db
 .vscode/
 .idea/
+
+# Local pytest temp (kept off the full C: drive)
+.pytest_tmp/

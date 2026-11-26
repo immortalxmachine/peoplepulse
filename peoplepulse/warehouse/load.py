@@ -149,7 +149,9 @@ def load(raw_dir: Path | None = None) -> dict[str, int]:
             "exit_type": clean["exit_type"].replace("", None),
             "exit_reason": clean["exit_reason"].replace("", None),
             "is_active": clean["is_active"],
-            "latest_rating": clean["latest_rating"],
+            # Nullable integer: some employees have no rating yet -> NULL, not NaN
+            # (NaN in an INTEGER column fails on strict backends like Postgres).
+            "latest_rating": clean["latest_rating"].astype("Int64"),
         }
     )
 

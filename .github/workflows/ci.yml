@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Real PostgreSQL 16, so the warehouse + views + NL->SQL run on the same
+    # engine they target in production (local dev uses SQLite). The LLM stays
+    # mocked (LLM_PROVIDER=mock), so no API key is ever needed.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse
+          POSTGRES_DB: peoplepulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulse"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg://pulse:pulse@localhost:5432/peoplepulse
+      LLM_PROVIDER: mock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Build warehouse on PostgreSQL (generate -> load -> views)
+        run: python -m peoplepulse.pipeline
+
+      - name: Run tests on PostgreSQL
+        run: pytest -q
