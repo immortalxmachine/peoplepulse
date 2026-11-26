@@ -1,0 +1,20 @@
+# PeoplePulse — pinned top-level dependencies.
+# Transitive dependencies (altair, scipy, pydantic, etc.) are resolved by pip.
+# NOTE: `pgserver` (bundled Postgres) has no Windows wheel, so local dev uses
+# SQLite and CI runs a real PostgreSQL service container. See README.
+
+pandas==3.1.1
+numpy==2.5.5
+SQLAlchemy==2.1.9
+psycopg[binary]==3.3.9        # PostgreSQL driver (used in CI)
+streamlit==1.67.0
+scikit-learn==1.9.1
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+sqlglot==30.35.0              # SQL parsing / validation guardrail
+httpx==0.28.1                 # test client + Ollama HTTP calls
+python-dotenv==1.2.4
+
+# Dev / CI
+pytest==9.2.0
+ruff==0.17.6
